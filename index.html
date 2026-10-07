@@ -259,7 +259,7 @@ table.rep td{white-space:normal;min-width:64px}
   <div id="view-admin" data-view="admin" hidden>
     <div class="admin-grid">
       <section class="panel" style="grid-column:1/-1">
-        <div class="panel-h"><h2>사용자 등록 · 인사팀(관리자) 지정</h2><span class="sub">여기 등록된 사람만 아래에서 부서 담당자·부문장·열람자로 지정할 수 있습니다. 로그인 계정은 Supabase 인증 메뉴에서 같은 이메일로 만들어 주십시오.</span></div>
+        <div class="panel-h"><h2>사용자 등록 · 인사팀(관리자) 지정</h2><span class="sub">① 이메일·성명을 추가하고 「사용자 저장」 → ② 「로그인 계정 생성」을 누르면 초기 비밀번호가 발급됩니다. 등록된 사람만 아래에서 부서 담당자·부문장·열람자로 지정할 수 있습니다.</span></div>
         <div class="panel-b" id="peopleBody"></div>
       </section>
       <section class="panel">
@@ -353,7 +353,8 @@ window.WFP_BACKEND=(function(){
     await buildMe(); try{ window.WFP_REPORT=await fetchDoc('config','report'); }catch(e){ window.WFP_REPORT=null; } showApp();
     return [db,user,downloads];
   }
-  return {init};
+  async function adminApi(action,payload){ const {data:{session:s}}=await sb.auth.getSession(); if(!s)throw {code:'unauthorized'}; const r=await fetch(C.SUPABASE_URL+"/functions/v1/admin-users",{method:"POST",headers:{apikey:C.SUPABASE_ANON_KEY,Authorization:"Bearer "+s.access_token,"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action},payload||{}))}); let j={}; try{ j=await r.json(); }catch(e){} if(!r.ok) throw {code:j.error||('http_'+r.status),message:j.detail||j.error||('HTTP '+r.status)}; return j; }
+  return {init,adminApi};
 })();
 </script>
 
@@ -780,20 +781,41 @@ let admStatus='open',headDraft=null,assignDraft=null,divHeadDraft=null,viewerDra
 $('#stOpen').onclick=()=>{admStatus='open';syncSt();}; $('#stClosed').onclick=()=>{admStatus='closed';syncSt();};
 function syncSt(){$('#stOpen').setAttribute('aria-pressed',String(admStatus==='open'));$('#stClosed').setAttribute('aria-pressed',String(admStatus==='closed'));}
 
-let peopleDraft=null,adminsDraft=null;
+let peopleDraft=null,adminsDraft=null,acctList=null,acctErr=null;
+async function loadAccounts(){ try{ const j=await window.WFP_BACKEND.adminApi('list'); acctList=j.users||[]; acctErr=null; }catch(e){ acctList=[]; acctErr=e.message||e.code||'오류'; } }
+function showSecret(title,email,pw){
+  const box=el('div',{class:'confirm',style:'flex-direction:column;align-items:flex-start;gap:6px'},
+    el('b',{text:title}),
+    el('div',{},el('span',{text:'이메일: '}),el('code',{text:email})),
+    el('div',{},el('span',{text:'초기 비밀번호: '}),el('code',{id:'secretPw',style:'font-size:15px;font-weight:700',text:pw})),
+    el('span',{class:'hint',text:'이 비밀번호는 지금 한 번만 표시됩니다. 복사해서 본인에게 전달하십시오. 첫 로그인 후 「재설정 메일 받기」로 변경할 수 있습니다.'}),
+    el('div',{class:'actions'},el('button',{class:'btn sm',type:'button',onclick:async()=>{ try{ await navigator.clipboard.writeText(`접속: ${location.origin+location.pathname}\n이메일: ${email}\n초기 비밀번호: ${pw}`); toast('접속 안내를 복사했습니다.'); }catch(e){ const r=document.createRange(); r.selectNode($('#secretPw')); getSelection().removeAllRanges(); getSelection().addRange(r); } }},'접속 안내 복사'),el('button',{class:'btn sm ghost',type:'button',onclick:()=>box.remove()},'닫기')));
+  const pb=$('#peopleBody'); pb.prepend(box); box.scrollIntoView({block:'nearest'});
+}
 function renderPeople(){
   if(!peopleDraft){ peopleDraft={}; Object.entries(cfg.people||{}).forEach(([k,v])=>peopleDraft[k]=Object.assign({},v)); }
   if(!adminsDraft){ adminsDraft=[...(cfg.admins||[])]; }
   const pb=$('#peopleBody'); pb.innerHTML='';
-  const t=el('table'); t.append(el('thead',{},el('tr',{},el('th',{text:'이메일 (로그인 ID)'}),el('th',{style:'text-align:left',text:'성명'}),el('th',{text:'인사팀(관리자)'}),el('th',{text:''}))));
+  if(acctList===null){ loadAccounts().then(renderPeople); }
+  if(acctErr) pb.append(el('div',{class:'notice warn',text:'로그인 계정 정보를 불러오지 못했습니다: '+acctErr}));
+  const t=el('table'); t.append(el('thead',{},el('tr',{},el('th',{text:'이메일 (로그인 ID)'}),el('th',{style:'text-align:left',text:'성명'}),el('th',{text:'인사팀(관리자)'}),el('th',{style:'text-align:left',text:'로그인 계정'}),el('th',{text:''}))));
   const tb=el('tbody');
   Object.keys(peopleDraft).sort().forEach(em=>{
     const p=peopleDraft[em];
     const nm=el('input',{type:'text',value:p.name||'',style:'min-height:34px;width:140px','aria-label':'성명',oninput:e=>{p.name=e.target.value;}});
     const ck=el('input',{type:'checkbox','aria-label':'관리자'}); ck.checked=adminsDraft.includes(em); ck.addEventListener('change',()=>{ if(ck.checked){ if(!adminsDraft.includes(em))adminsDraft.push(em);} else adminsDraft=adminsDraft.filter(x=>x!==em); });
-    tb.append(el('tr',{},el('td',{class:'name',text:em}),el('td',{style:'text-align:left'},nm),el('td',{},ck),el('td',{},el('button',{class:'btn sm ghost',type:'button',onclick:()=>{delete peopleDraft[em];adminsDraft=adminsDraft.filter(x=>x!==em);renderPeople();}},'삭제'))));
+    const acct=acctList?acctList.find(u=>u.email===em):undefined;
+    const acctCell=el('td',{style:'text-align:left;white-space:normal'});
+    if(acctList===null) acctCell.append(el('span',{class:'dim',text:'확인 중…'}));
+    else if(acct){ acctCell.append(el('span',{class:'chip ok',text:'계정 있음'}),el('span',{class:'hint',style:'margin-left:6px',text:acct.last_sign_in_at?`최근 로그인 ${fmtTs(acct.last_sign_in_at)}`:'아직 로그인 전'}),
+        el('div',{class:'actions',style:'margin-top:4px;gap:6px'},
+          el('button',{class:'btn sm',type:'button',onclick:async(e)=>{ e.target.disabled=true; try{ const j=await window.WFP_BACKEND.adminApi('setPassword',{id:acct.id}); showSecret('비밀번호를 재발급했습니다',em,j.password); }catch(err){ toast('재발급 실패: '+(err.message||err.code)); } e.target.disabled=false; }},'비밀번호 재발급'),
+          el('button',{class:'btn sm ghost',type:'button',onclick:async(e)=>{ if(em===me.id){toast('본인 계정은 삭제할 수 없습니다.');return;} const b=e.target; if(b.dataset.arm!=='1'){ b.dataset.arm='1'; b.textContent='정말 삭제 (다시 클릭)'; b.style.color='var(--minus)'; setTimeout(()=>{b.dataset.arm='';b.textContent='계정 삭제';b.style.color='';},4000); return; } try{ await window.WFP_BACKEND.adminApi('delete',{id:acct.id}); toast('로그인 계정을 삭제했습니다.'); await loadAccounts(); renderPeople(); }catch(err){ toast('삭제 실패: '+(err.message||err.code)); } }},'계정 삭제'))); }
+    else { acctCell.append(el('span',{class:'chip none',text:'계정 없음'}),
+        el('div',{class:'actions',style:'margin-top:4px'},el('button',{class:'btn sm primary',type:'button',onclick:async(e)=>{ e.target.disabled=true; try{ const j=await window.WFP_BACKEND.adminApi('create',{email:em,name:p.name||''}); showSecret('로그인 계정을 만들었습니다',em,j.password); await loadAccounts(); renderPeople(); }catch(err){ toast('계정 생성 실패: '+(err.message||err.code)); e.target.disabled=false; } }},'로그인 계정 생성'))); }
+    tb.append(el('tr',{},el('td',{class:'name',text:em}),el('td',{style:'text-align:left'},nm),el('td',{},ck),acctCell,el('td',{},el('button',{class:'btn sm ghost',type:'button',onclick:()=>{delete peopleDraft[em];adminsDraft=adminsDraft.filter(x=>x!==em);renderPeople();}},'목록에서 제거'))));
   });
-  if(!Object.keys(peopleDraft).length) tb.append(el('tr',{},el('td',{colspan:'4',class:'dim',text:'등록된 사용자가 없습니다.'})));
+  if(!Object.keys(peopleDraft).length) tb.append(el('tr',{},el('td',{colspan:'5',class:'dim',text:'등록된 사용자가 없습니다.'})));
   t.append(tb); pb.append(el('div',{class:'tbl-wrap'},t));
   const em=el('input',{type:'text',placeholder:'이메일 (예: hong@ationfashion.co.kr)',style:'flex:2 1 240px;min-height:40px','aria-label':'이메일'});
   const nm=el('input',{type:'text',placeholder:'성명',style:'flex:1 1 120px;min-height:40px','aria-label':'성명'});
