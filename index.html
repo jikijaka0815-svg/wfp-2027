@@ -188,6 +188,7 @@ table.rep td{white-space:normal;min-width:64px}
         <div class="field"><label for="loginPw">비밀번호</label><input type="password" id="loginPw" autocomplete="current-password"></div>
         <div class="actions"><button class="btn primary" id="loginBtn" type="button" style="flex:1">로그인</button></div>
         <div class="notice" id="loginMsg" hidden></div>
+        <div class="hint" style="text-align:right;color:var(--fg-3)">버전 2026.10.07-D</div>
         <div class="hint">비밀번호를 모르시면 <button class="btn sm ghost" id="resetBtn" type="button" style="padding:0 4px;min-height:24px;text-decoration:underline">재설정 메일 받기</button> · 계정이 없으면 인사총무팀에 문의하십시오.</div>
       </div>
     </section>
@@ -358,7 +359,7 @@ window.WFP_BACKEND=(function(){
     btn.onclick=run; $('#pw2').onkeydown=e=>{if(e.key==='Enter')run();}; }); }
   async function buildMe(){ const e=email(); let cfg=null; try{ cfg=await fetchDoc('config','org'); }catch(err){ cfg=null; } const p=cfg?.people?.[e]; const admin=Array.isArray(cfg?.admins)&&cfg.admins.includes(e); me={id:e,name:p?.name||e,avatarUrl:initials(p?.name||e),color:'#c8102e',email:e,canEdit:admin,isOwner:admin}; }
   function wireLogin(){
-    const run=async()=>{ const em=$('#loginEmail').value.trim(), pw=$('#loginPw').value; if(!em||!pw){showLogin('이메일과 비밀번호를 입력하십시오.','warn');return;} $('#loginBtn').disabled=true; const {error}=await sb.auth.signInWithPassword({email:em,password:pw}); $('#loginBtn').disabled=false; if(!error&&pw===INIT_PW) usedInitPw=true; if(error){ showLogin(/Invalid login/i.test(error.message)?'이메일 또는 비밀번호가 올바르지 않습니다.':'로그인하지 못했습니다: '+error.message,'err'); } };
+    const run=async()=>{ const em=$('#loginEmail').value.trim(), pw=$('#loginPw').value; if(!em||!pw){showLogin('이메일과 비밀번호를 입력하십시오.','warn');return;} $('#loginBtn').disabled=true; usedInitPw=(pw===INIT_PW); const {error}=await sb.auth.signInWithPassword({email:em,password:pw}); $('#loginBtn').disabled=false; if(error) usedInitPw=false; if(error){ showLogin(/Invalid login/i.test(error.message)?'이메일 또는 비밀번호가 올바르지 않습니다.':'로그인하지 못했습니다: '+error.message,'err'); } };
     $('#loginBtn').addEventListener('click',run); $('#loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')run();});
     $('#resetBtn').addEventListener('click',async()=>{ const em=$('#loginEmail').value.trim(); if(!em){showLogin('이메일을 먼저 입력하십시오.','warn');return;} const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}); showLogin(error?'재설정 메일을 보내지 못했습니다: '+error.message:'재설정 메일을 보냈습니다. 메일함을 확인하십시오. (수신까지 몇 분 걸릴 수 있습니다)',error?'err':''); });
     const lo=$('#logoutBtn'); if(lo) lo.addEventListener('click',async()=>{ await sb.auth.signOut(); location.reload(); });
